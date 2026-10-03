@@ -42,6 +42,7 @@ import com.example.viewmodel.AuthViewModel
 import com.example.viewmodel.FinanceViewModel
 import androidx.compose.ui.res.painterResource
 import com.example.R
+import com.example.ui.components.ReceiptScanDialog
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -53,6 +54,7 @@ fun DashboardScreen(
 ) {
     val currentUser by authViewModel.currentUser.collectAsState()
     val transactions by financeViewModel.transactions.collectAsState()
+    var showScanReceiptDialog by remember { mutableStateOf(false) }
 
     val initialCash by financeViewModel.initialCash.collectAsState()
     val initialEWallet by financeViewModel.initialEWallet.collectAsState()
@@ -324,18 +326,96 @@ fun DashboardScreen(
             }
         }
 
-        // Aturan Pengelolaan Keuangan 50/30/20
+        // Quick Action: Pindai Struk / Bukti Bayar Otomatis (Kamera & Galeri)
         item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp)
+                    .padding(vertical = 4.dp)
+                    .testTag("scan_receipt_banner"),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DocumentScanner,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Pindai Struk & Bukti Bayar",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Kamera & Galeri otomatis masuk ke Riwayat",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { showScanReceiptDialog = true },
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.testTag("btn_open_scan_dialog")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Pindai",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        // Aturan Pengelolaan Keuangan 50/30/20 (Tata Letak Kompak & Rapi)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 10.dp)
                     .testTag("card_50_30_20_method"),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -346,63 +426,64 @@ fun DashboardScreen(
                                 imageVector = Icons.Default.PieChart,
                                 contentDescription = "Metode 50/30/20",
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
                                     text = "Aturan Keuangan 50/30/20",
-                                    fontSize = 16.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Kelola otomatis budget bulanan sehat",
-                                    fontSize = 11.sp,
+                                    text = "Alokasi target anggaran bulanan Anda",
+                                    fontSize = 10.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     if (totalIncome <= 0.0) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 12.dp),
+                                .padding(vertical = 8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Info,
                                 contentDescription = "Saran",
                                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(26.dp)
                             )
                             Text(
                                 text = "Belum Ada Pemasukan Bulan Ini",
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Saat Anda mencatat pemasukan, sistem akan langsung membagi target keuangan Anda menjadi 50% Kebutuhan, 30% Keinginan, dan 20% Tabungan.",
+                                text = "Catat pemasukan untuk mengaktifkan target 50% Kebutuhan, 30% Keinginan, dan 20% Tabungan.",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 12.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp)
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
                             Button(
                                 onClick = { navController.navigate("add_transaction") },
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Catat Pemasukan", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Catat Pemasukan", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     } else {
@@ -413,151 +494,125 @@ fun DashboardScreen(
                         val progressNeeds = if (limitNeeds > 0) (needsActual / limitNeeds).toFloat().coerceIn(0f, 1f) else 0f
                         val progressWants = if (limitWants > 0) (wantsActual / limitWants).toFloat().coerceIn(0f, 1f) else 0f
 
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            // Section 1: Kebutuhan (50%)
-                            Column {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            // 1. Kebutuhan (50%)
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(18.dp)
-                                                    .clip(CircleShape)
-                                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text("50", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                            }
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = "Kebutuhan (Needs)",
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                        Text(
-                                            text = "Makanan, Minuman, Kesehatan, Sekolah, Transport, Pajak, dll",
-                                            fontSize = 10.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text(
-                                            text = "${FormatUtils.formatRupiah(needsActual)} / ${FormatUtils.formatRupiah(limitNeeds)}",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (needsActual > limitNeeds) SoftRedDanger else MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = "Terpakai ${(progressNeeds * 100).toInt()}%",
-                                            fontSize = 9.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                LinearProgressIndicator(
-                                    progress = { progressNeeds },
-                                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                                    color = if (needsActual > limitNeeds) SoftRedDanger else MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                                )
-                            }
-
-                            // Section 2: Keinginan (30%)
-                            Column {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(18.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFFFFB300).copy(alpha = 0.15f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text("30", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD48A00))
-                                            }
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = "Keinginan (Wants)",
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                        Text(
-                                            text = "Belanja, Hiburan, Jajan, E-Wallet, Lainnya",
-                                            fontSize = 10.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text(
-                                            text = "${FormatUtils.formatRupiah(wantsActual)} / ${FormatUtils.formatRupiah(limitWants)}",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (wantsActual > limitWants) SoftRedDanger else Color(0xFFD48A00)
-                                        )
-                                        Text(
-                                            text = "Terpakai ${(progressWants * 100).toInt()}%",
-                                            fontSize = 9.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                LinearProgressIndicator(
-                                    progress = { progressWants },
-                                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                                    color = if (wantsActual > limitWants) SoftRedDanger else Color(0xFFFFB300),
-                                    trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                                )
-                            }
-
-                            // Section 3: Tabungan (20%)
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = SoftGreenSuccess.copy(alpha = 0.08f)),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Box(
                                             modifier = Modifier
-                                                .size(24.dp)
+                                                .size(20.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("50", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Kebutuhan",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    Text(
+                                        text = "${FormatUtils.formatRupiah(needsActual)} / ${FormatUtils.formatRupiah(limitNeeds)} (${(progressNeeds * 100).toInt()}%)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (needsActual > limitNeeds) SoftRedDanger else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                LinearProgressIndicator(
+                                    progress = { progressNeeds },
+                                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                    color = if (needsActual > limitNeeds) SoftRedDanger else MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                )
+                            }
+
+                            // 2. Keinginan (30%)
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFFFFB300).copy(alpha = 0.15f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("30", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD48A00))
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Keinginan",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    Text(
+                                        text = "${FormatUtils.formatRupiah(wantsActual)} / ${FormatUtils.formatRupiah(limitWants)} (${(progressWants * 100).toInt()}%)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (wantsActual > limitWants) SoftRedDanger else Color(0xFFD48A00)
+                                    )
+                                }
+                                LinearProgressIndicator(
+                                    progress = { progressWants },
+                                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                    color = if (wantsActual > limitWants) SoftRedDanger else Color(0xFFFFB300),
+                                    trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                )
+                            }
+
+                            // 3. Tabungan & Investasi (20%)
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(20.dp)
                                                 .clip(CircleShape)
                                                 .background(SoftGreenSuccess.copy(alpha = 0.15f)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text("20", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SoftGreenSuccess)
                                         }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Column {
-                                            Text("Rekomendasi Tabungan & Investasi", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SoftGreenSuccess)
-                                            Text("Sisihkan dana darurat Anda secara konsisten", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Tabungan & Investasi",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
                                     }
                                     Text(
-                                        text = FormatUtils.formatRupiah(limitSavings),
-                                        fontSize = 13.sp,
+                                        text = "Target: ${FormatUtils.formatRupiah(limitSavings)}",
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = SoftGreenSuccess
                                     )
                                 }
+                                LinearProgressIndicator(
+                                    progress = { 1f },
+                                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                    color = SoftGreenSuccess,
+                                    trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                )
                             }
                         }
                     }
@@ -632,6 +687,12 @@ fun DashboardScreen(
             }
         }
     }
+
+    ReceiptScanDialog(
+        isOpen = showScanReceiptDialog,
+        onDismiss = { showScanReceiptDialog = false },
+        financeViewModel = financeViewModel
+    )
 }
 
 @Composable

@@ -159,6 +159,17 @@ class FinanceViewModel(
         }
     }
 
+    fun addTransaction(transaction: Transaction) {
+        addTransaction(
+            amount = transaction.amount,
+            type = transaction.type,
+            category = transaction.category,
+            note = transaction.note,
+            date = transaction.date,
+            walletAccount = transaction.walletAccount
+        )
+    }
+
     fun setTargetBudget(amount: Double) {
         _targetBudget.value = amount
         prefs.edit().putFloat("target_budget", amount.toFloat()).apply()
