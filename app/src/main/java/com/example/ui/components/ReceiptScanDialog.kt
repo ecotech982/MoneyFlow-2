@@ -16,12 +16,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -45,10 +48,11 @@ import com.example.ui.theme.SoftGreenSuccess
 import com.example.ui.theme.SoftRedDanger
 import com.example.utils.FormatUtils
 import com.example.utils.ReceiptScannerHelper
+import com.example.utils.ScannedItem
+import com.example.utils.ScannedReceiptData
 import com.example.viewmodel.FinanceViewModel
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.*
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,38 +67,67 @@ fun ReceiptScanDialog(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var scannedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var scannedBitmaps by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
     var isProcessing by remember { mutableStateOf(false) }
 
-    // Editable extracted fields
-    var amountInput by remember { mutableStateOf("") }
-    var transactionType by remember { mutableStateOf("EXPENSE") } // "INCOME" or "EXPENSE"
-    var selectedCategory by remember { mutableStateOf("Belanja") }
+    // Multi-Item list extracted from receipt(s)
+    val scannedItemList = remember { mutableStateListOf<ScannedItem>() }
+    var merchantTitle by remember { mutableStateOf("Struk Belanja") }
+    var globalType by remember { mutableStateOf("EXPENSE") } // "EXPENSE" or "INCOME"
     var selectedWallet by remember { mutableStateOf("Tunai") }
-    var noteInput by remember { mutableStateOf("") }
+
+    // Mode: 0 = Rekap Per Item (Multi-Transaksi), 1 = Rekap 1 Transaksi (Total)
+    var isSeparateItemsMode by remember { mutableStateOf(true) }
 
     val incomeCategories = listOf("Gaji", "Bonus", "Investasi", "Penjualan", "Lainnya")
     val expenseCategories = listOf(
-        "Makanan", "Belanja", "Transportasi", "Tagihan Rutin", "Kesehatan",
-        "Pendidikan", "Hiburan", "Jajan", "Perawatan Diri", "Lainnya"
+        "Makanan", "Minuman", "Belanja(Shopping)", "Transportasi", "Tagihan Rutin",
+        "Kesehatan", "Perawatan Diri", "Kebutuhan Sekolah", "Hiburan", "Lainnya"
     )
     val walletOptions = listOf("Tunai", "E-Wallet", "Rekening 1", "Rekening 2", "Rekening 3", "Lainnya")
 
-    // Function to parse bitmap
-    val processBitmap: (Bitmap) -> Unit = { bitmap ->
-        scannedBitmap = bitmap
+    // Function to parse single or multiple images
+    fun processBitmaps(bitmaps: List<Bitmap>) {
+        scannedBitmaps = bitmaps
         isProcessing = true
         coroutineScope.launch {
             try {
-                val result = ReceiptScannerHelper.scanReceipt(bitmap)
-                amountInput = if (result.amount > 0) result.amount.toLong().toString() else ""
-                transactionType = result.type
-                selectedCategory = result.category
-                selectedWallet = result.walletAccount
-                noteInput = result.note
+                scannedItemList.clear()
+                var detectedMerchant = "Struk Belanja"
+                var detectedType = "EXPENSE"
+                var detectedWallet = "Tunai"
+
+                for (bitmap in bitmaps) {
+                    val result = ReceiptScannerHelper.scanReceipt(bitmap)
+                    if (result.merchantName.isNotBlank() && result.merchantName != "Struk Pembelian") {
+                        detectedMerchant = result.merchantName
+                    }
+                    detectedType = result.type
+                    detectedWallet = result.walletAccount
+
+                    result.items.forEach { item ->
+                        scannedItemList.add(item)
+                    }
+                }
+
+                merchantTitle = detectedMerchant
+                globalType = detectedType
+                selectedWallet = detectedWallet
+
+                // Ensure at least one item
+                if (scannedItemList.isEmpty()) {
+                    scannedItemList.add(
+                        ScannedItem(
+                            name = "Transaksi Baru",
+                            price = 0.0,
+                            category = "Belanja(Shopping)",
+                            type = globalType
+                        )
+                    )
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
-                Toast.makeText(context, "Gagal memindai struk: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Gagal memindai gambar: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
                 isProcessing = false
             }
@@ -106,11 +139,11 @@ fun ReceiptScanDialog(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap: Bitmap? ->
         if (bitmap != null) {
-            processBitmap(bitmap)
+            processBitmaps(listOf(bitmap))
         }
     }
 
-    // Permission Launcher for Camera
+    // Camera Permission Launcher
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -121,16 +154,16 @@ fun ReceiptScanDialog(
         }
     }
 
-    // Photo Picker Launcher (zero permission)
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val bitmap = ReceiptScannerHelper.loadBitmapFromUri(context, uri)
-            if (bitmap != null) {
-                processBitmap(bitmap)
+    // Multi-Image Gallery Launcher (Pick Multiple Visual Media)
+    val multiGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            val bitmaps = uris.mapNotNull { ReceiptScannerHelper.loadBitmapFromUri(context, it) }
+            if (bitmaps.isNotEmpty()) {
+                processBitmaps(bitmaps)
             } else {
-                Toast.makeText(context, "Gagal membuka gambar", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Gagal memuat gambar dari galeri", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -141,8 +174,8 @@ fun ReceiptScanDialog(
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .fillMaxHeight(0.88f)
+                .fillMaxWidth(0.96f)
+                .fillMaxHeight(0.92f)
                 .clip(RoundedCornerShape(24.dp)),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp
@@ -150,9 +183,9 @@ fun ReceiptScanDialog(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(20.dp)
+                    .padding(18.dp)
             ) {
-                // Header
+                // Header Bar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -176,13 +209,13 @@ fun ReceiptScanDialog(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Pindai Struk / Bukti Bayar",
+                                text = "Pindai Struk & Bukti Bayar",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Otomatis direkap ke Riwayat",
+                                text = "Presisi per-item & rekap multi-transaksi",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -195,13 +228,12 @@ fun ReceiptScanDialog(
                 }
 
                 HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 12.dp),
+                    modifier = Modifier.padding(vertical = 10.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                 )
 
-                // Body content
-                if (scannedBitmap == null) {
-                    // Selection view: Kamera vs Galeri
+                if (scannedBitmaps.isEmpty()) {
+                    // Initial State: Choose Camera vs Gallery (single/multiple)
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -210,30 +242,30 @@ fun ReceiptScanDialog(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ReceiptLong,
+                            imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
                             contentDescription = null,
-                            modifier = Modifier.size(72.dp),
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                            modifier = Modifier.size(68.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
                         Text(
-                            text = "Ambil Gambar Bukti Transaksi",
+                            text = "Ambil Struk atau Bukti Transaksi",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Foto struk belanja, tiket, transfer m-Banking, atau tagihan. Sistem akan mendeteksi nominal dan kategori secara instan.",
+                            text = "Foto struk belanja (Indomaret, SPBU, Cafe) atau pilih 1 atau lebih screenshot transfer/pembayaran. Sistem akan mengekstrak setiap item & harga secara presisi.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 16.dp)
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 14.dp)
                         )
 
-                        Spacer(modifier = Modifier.height(28.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                        // Kamera Button
+                        // Camera Button
                         Button(
                             onClick = {
                                 val hasPermission = ContextCompat.checkSelfPermission(
@@ -247,38 +279,38 @@ fun ReceiptScanDialog(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(50.dp)
+                                .height(48.dp)
                                 .testTag("btn_scan_camera"),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) {
-                            Icon(Icons.Default.PhotoCamera, contentDescription = null)
+                            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Buka Kamera (Foto Struk)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("Buka Kamera (Foto Struk)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                        // Galeri Button
+                        // Multi-Image Gallery Button
                         OutlinedButton(
                             onClick = {
-                                galleryLauncher.launch(
+                                multiGalleryLauncher.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(50.dp)
+                                .height(48.dp)
                                 .testTag("btn_scan_gallery"),
-                            shape = RoundedCornerShape(14.dp)
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Default.Image, contentDescription = null)
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Pilih File Gambar dari Galeri", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("Pilih Gambar dari Galeri (Bisa Lebih dari Satu)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         }
                     }
                 } else if (isProcessing) {
-                    // Processing state
+                    // Processing / OCR State
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -291,242 +323,493 @@ fun ReceiptScanDialog(
                         ) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             Text(
-                                text = "Membaca data struk & nominal...",
-                                fontSize = 14.sp,
+                                text = "Membaca teks struk & mengekstrak harga presisi...",
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
                 } else {
-                    // Form preview of recognized transaction
-                    Column(
+                    // Review & Edit Scanned Multi-Items
+                    LazyColumn(
                         modifier = Modifier
                             .weight(1f)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Image Thumbnail + Retake Option
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                                .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Image(
-                                bitmap = scannedBitmap!!.asImageBitmap(),
-                                contentDescription = "Foto Struk",
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+                        // Section 1: Thumbnail(s) & Merchant Header
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // Image previews
+                                            Row(
+                                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                scannedBitmaps.forEach { b ->
+                                                    Image(
+                                                        bitmap = b.asImageBitmap(),
+                                                        contentDescription = "Preview Struk",
+                                                        modifier = Modifier
+                                                            .size(48.dp)
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = "${scannedItemList.size} Item Terdeteksi",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = SoftGreenSuccess
+                                                )
+                                                Text(
+                                                    text = "Presisi sesuai teks struk",
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+
+                                        // Reset/Retake button
+                                        IconButton(onClick = {
+                                            scannedBitmaps = emptyList()
+                                            scannedItemList.clear()
+                                        }) {
+                                            Icon(Icons.Default.Refresh, contentDescription = "Pindai Ulang", tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Merchant / Note Input
+                                    OutlinedTextField(
+                                        value = merchantTitle,
+                                        onValueChange = { merchantTitle = it },
+                                        label = { Text("Nama Toko / Tempat / Keterangan Struk") },
+                                        leadingIcon = { Icon(Icons.Default.Storefront, contentDescription = null) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Section 2: Global Configuration (Tipe Transaksi & Akun Dompet)
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Tipe Selector: Pengeluaran vs Pemasukan
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                                        .padding(3.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            globalType = "EXPENSE"
+                                            scannedItemList.forEach { it.type = "EXPENSE" }
+                                        },
+                                        modifier = Modifier.weight(1f).height(36.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (globalType == "EXPENSE") SoftRedDanger else Color.Transparent,
+                                            contentColor = if (globalType == "EXPENSE") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("Pengeluaran", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            globalType = "INCOME"
+                                            scannedItemList.forEach { it.type = "INCOME" }
+                                        },
+                                        modifier = Modifier.weight(1f).height(36.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (globalType == "INCOME") SoftGreenSuccess else Color.Transparent,
+                                            contentColor = if (globalType == "INCOME") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("Pemasukan", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section 3: Mode Rekap Selector
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f))
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (isSeparateItemsMode) "Mode: Rekap Tiap Item (Rinci)" else "Mode: Rekap Total Struk",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = if (isSeparateItemsMode) "Tiap barang masuk ke riwayat secara terpisah" else "Semua barang digabung jadi 1 transaksi total",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Switch(
+                                        checked = isSeparateItemsMode,
+                                        onCheckedChange = { isSeparateItemsMode = it }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Section 4: Dompet / Sumber Dana
+                        item {
+                            Column {
                                 Text(
-                                    text = "Gambar Berhasil Terdeteksi",
+                                    text = "Sumber Dana / Akun:",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    walletOptions.forEach { w ->
+                                        val isSel = selectedWallet == w
+                                        FilterChip(
+                                            selected = isSel,
+                                            onClick = { selectedWallet = w },
+                                            label = { Text(w, fontSize = 11.sp) },
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section 5: List of Items (Header)
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Rincian Item (${scannedItemList.count { it.isSelected }} terpilih):",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = SoftGreenSuccess
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Text(
-                                    text = "Data telah diekstrak otomatis. Anda dapat mengubah data sebelum disimpan.",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(onClick = { scannedBitmap = null }) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Ganti Foto", tint = MaterialTheme.colorScheme.primary)
+
+                                TextButton(
+                                    onClick = {
+                                        scannedItemList.add(
+                                            ScannedItem(
+                                                name = "Item Baru",
+                                                price = 0.0,
+                                                category = if (globalType == "INCOME") "Gaji" else "Makanan",
+                                                type = globalType
+                                            )
+                                        )
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("+ Tambah Item", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
 
-                        // Tipe Transaksi (Pemasukan vs Pengeluaran)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                                .padding(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    transactionType = "EXPENSE"
-                                    if (selectedCategory in incomeCategories) selectedCategory = "Belanja"
+                        // Items list with editable names, prices, categories, and checkboxes
+                        itemsIndexed(scannedItemList, key = { _, item -> item.id }) { index, item ->
+                            ScannedItemRow(
+                                item = item,
+                                globalType = globalType,
+                                expenseCategories = expenseCategories,
+                                incomeCategories = incomeCategories,
+                                onUpdate = { updated ->
+                                    scannedItemList[index] = updated
                                 },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(40.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (transactionType == "EXPENSE") SoftRedDanger else Color.Transparent,
-                                    contentColor = if (transactionType == "EXPENSE") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                ),
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Text("Pengeluaran", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-
-                            Button(
-                                onClick = {
-                                    transactionType = "INCOME"
-                                    if (selectedCategory in expenseCategories) selectedCategory = "Gaji"
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(40.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (transactionType == "INCOME") SoftGreenSuccess else Color.Transparent,
-                                    contentColor = if (transactionType == "INCOME") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                ),
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Text("Pemasukan", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        // Nominal Input
-                        OutlinedTextField(
-                            value = amountInput,
-                            onValueChange = { input ->
-                                if (input.all { it.isDigit() }) {
-                                    amountInput = input
+                                onDelete = {
+                                    if (scannedItemList.size > 1) {
+                                        scannedItemList.removeAt(index)
+                                    } else {
+                                        Toast.makeText(context, "Minimal harus ada 1 item", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
-                            },
-                            label = { Text("Nominal Transaksi (Rp)") },
-                            leadingIcon = {
-                                Text("Rp", fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
-                            },
-                            trailingIcon = {
-                                val amountVal = amountInput.toDoubleOrNull() ?: 0.0
-                                Text(
-                                    text = FormatUtils.formatRupiah(amountVal),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(end = 12.dp)
-                                )
-                            },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("scanned_amount_input"),
-                            shape = RoundedCornerShape(14.dp)
-                        )
-
-                        // Catatan / Nama Merchant
-                        OutlinedTextField(
-                            value = noteInput,
-                            onValueChange = { noteInput = it },
-                            label = { Text("Catatan / Nama Toko / Keterangan") },
-                            leadingIcon = { Icon(Icons.Default.Storefront, contentDescription = null) },
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("scanned_note_input"),
-                            shape = RoundedCornerShape(14.dp)
-                        )
-
-                        // Kategori Selector Chips
-                        Column {
-                            Text(
-                                text = "Kategori Transaksi",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(bottom = 6.dp)
                             )
-                            val categories = if (transactionType == "INCOME") incomeCategories else expenseCategories
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                categories.forEach { cat ->
-                                    val isSelected = selectedCategory == cat
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { selectedCategory = cat },
-                                        label = { Text(cat, fontSize = 11.sp) },
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        // Akun Dompet / Rekening
-                        Column {
-                            Text(
-                                text = "Akun Dompet / Sumber Dana",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(bottom = 6.dp)
-                            )
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                walletOptions.forEach { w ->
-                                    val isSelected = selectedWallet == w
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { selectedWallet = w },
-                                        label = { Text(w, fontSize = 11.sp) },
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                }
-                            }
                         }
                     }
 
-                    // Bottom Action Bar: Simpan & Masuk Riwayat
-                    Button(
-                        onClick = {
-                            val amount = amountInput.toDoubleOrNull() ?: 0.0
-                            if (amount <= 0.0) {
-                                Toast.makeText(context, "Nominal transaksi tidak boleh kosong", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
+                    // Bottom Summary & Rekap Action Bar
+                    val selectedItems = scannedItemList.filter { it.isSelected }
+                    val totalSelectedAmount = selectedItems.sumOf { it.price }
 
-                            val newTransaction = Transaction(
-                                type = transactionType,
-                                category = selectedCategory,
-                                amount = amount,
-                                date = System.currentTimeMillis(),
-                                note = noteInput.ifBlank { "Pindai Struk Otomatis" },
-                                walletAccount = selectedWallet
-                            )
-
-                            financeViewModel.addTransaction(newTransaction)
-                            onTransactionSaved?.invoke(newTransaction)
-                            Toast.makeText(
-                                context,
-                                "Transaksi ${FormatUtils.formatRupiah(amount)} berhasil direkap ke Riwayat!",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            onDismiss()
-                        },
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp)
-                            .testTag("btn_save_scanned_transaction"),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            .padding(top = 8.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                     ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Total (${selectedItems.size} Item Terpilih):",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = FormatUtils.formatRupiah(totalSelectedAmount),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (globalType == "INCOME") SoftGreenSuccess else MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Button(
+                                onClick = {
+                                    if (selectedItems.isEmpty()) {
+                                        Toast.makeText(context, "Pilih minimal 1 item untuk direkap", Toast.LENGTH_SHORT).show()
+                                        return@Button
+                                    }
+
+                                    if (isSeparateItemsMode) {
+                                        // Mode 1: Rekap setiap item sebagai transaksi terpisah
+                                        val transactions = selectedItems.map { itm ->
+                                            Transaction(
+                                                type = itm.type,
+                                                category = itm.category,
+                                                amount = itm.price,
+                                                date = System.currentTimeMillis(),
+                                                note = "${itm.name} ($merchantTitle)",
+                                                walletAccount = selectedWallet
+                                            )
+                                        }
+                                        financeViewModel.addMultipleTransactions(transactions)
+                                        transactions.forEach { onTransactionSaved?.invoke(it) }
+                                        Toast.makeText(
+                                            context,
+                                            "Berhasil merekap ${transactions.size} item ke Riwayat!",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        // Mode 2: Rekap sebagai 1 total transaksi
+                                        val itemsSummary = selectedItems.joinToString(", ") { "${it.name} (${FormatUtils.formatRupiah(it.price)})" }
+                                        val singleTransaction = Transaction(
+                                            type = globalType,
+                                            category = selectedItems.firstOrNull()?.category ?: "Belanja(Shopping)",
+                                            amount = totalSelectedAmount,
+                                            date = System.currentTimeMillis(),
+                                            note = "$merchantTitle: $itemsSummary",
+                                            walletAccount = selectedWallet
+                                        )
+                                        financeViewModel.addTransaction(singleTransaction)
+                                        onTransactionSaved?.invoke(singleTransaction)
+                                        Toast.makeText(
+                                            context,
+                                            "Berhasil merekap total ${FormatUtils.formatRupiah(totalSelectedAmount)} ke Riwayat!",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                    onDismiss()
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("btn_save_scanned_transaction"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isSeparateItemsMode) "Rekap ${selectedItems.size} Transaksi ke Riwayat" else "Rekap Total ke Riwayat",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ScannedItemRow(
+    item: ScannedItem,
+    globalType: String,
+    expenseCategories: List<String>,
+    incomeCategories: List<String>,
+    onUpdate: (ScannedItem) -> Unit,
+    onDelete: () -> Unit
+) {
+    var isExpandedCategory by remember { mutableStateOf(false) }
+    var priceStr by remember(item.price) { mutableStateOf(if (item.price > 0) item.price.toLong().toString() else "") }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (item.isSelected) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (item.isSelected) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f) else Color.Transparent
+        )
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Checkbox to include/exclude
+                Checkbox(
+                    checked = item.isSelected,
+                    onCheckedChange = { isChecked ->
+                        onUpdate(item.copy(isSelected = isChecked))
+                    },
+                    modifier = Modifier.size(24.dp)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Item Name (Precise)
+                OutlinedTextField(
+                    value = item.name,
+                    onValueChange = { newName ->
+                        onUpdate(item.copy(name = newName))
+                    },
+                    label = { Text("Nama Barang / Catatan", fontSize = 10.sp) },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Delete button
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = "Hapus Item",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 32.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Price Input (Precise)
+                OutlinedTextField(
+                    value = priceStr,
+                    onValueChange = { input ->
+                        if (input.all { it.isDigit() }) {
+                            priceStr = input
+                            val num = input.toDoubleOrNull() ?: 0.0
+                            onUpdate(item.copy(price = num))
+                        }
+                    },
+                    label = { Text("Harga (Rp)", fontSize = 10.sp) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(0.55f),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                // Category Selector Button
+                Box(modifier = Modifier.weight(0.45f)) {
+                    OutlinedButton(
+                        onClick = { isExpandedCategory = true },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
                         Text(
-                            text = "Langsung Rekap ke Riwayat",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
+                            text = item.category,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            fontWeight = FontWeight.SemiBold
                         )
+                    }
+
+                    DropdownMenu(
+                        expanded = isExpandedCategory,
+                        onDismissRequest = { isExpandedCategory = false }
+                    ) {
+                        val categories = if (globalType == "INCOME") incomeCategories else expenseCategories
+                        categories.forEach { cat ->
+                            DropdownMenuItem(
+                                text = { Text(cat, fontSize = 12.sp) },
+                                onClick = {
+                                    onUpdate(item.copy(category = cat))
+                                    isExpandedCategory = false
+                                }
+                            )
+                        }
                     }
                 }
             }

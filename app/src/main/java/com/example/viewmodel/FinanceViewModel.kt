@@ -170,6 +170,24 @@ class FinanceViewModel(
         )
     }
 
+    fun addMultipleTransactions(transactions: List<Transaction>) {
+        viewModelScope.launch {
+            val user = authRepository.loadSavedUser()
+            val userId = user?.id ?: authRepository.getLoggedUserId()
+            val finalUserId = if (userId != -1) userId else 1
+
+            transactions.forEach { t ->
+                val finalTransaction = t.copy(userId = finalUserId)
+                transactionRepository.insertTransaction(finalTransaction)
+            }
+            _uiMessage.emit("${transactions.size} transaksi berhasil direkap!")
+
+            if (_isAutoSync.value) {
+                simulateFirebaseSync()
+            }
+        }
+    }
+
     fun setTargetBudget(amount: Double) {
         _targetBudget.value = amount
         prefs.edit().putFloat("target_budget", amount.toFloat()).apply()
