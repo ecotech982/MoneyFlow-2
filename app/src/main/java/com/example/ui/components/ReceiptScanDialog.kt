@@ -37,6 +37,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,12 +49,12 @@ import com.example.data.model.Transaction
 import com.example.ui.theme.SoftGreenSuccess
 import com.example.ui.theme.SoftRedDanger
 import com.example.utils.FormatUtils
+import com.example.utils.OpenRouterAiHelper
 import com.example.utils.ReceiptScannerHelper
 import com.example.utils.ScannedItem
 import com.example.utils.ScannedReceiptData
 import com.example.viewmodel.FinanceViewModel
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,8 +69,15 @@ fun ReceiptScanDialog(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    val openRouterApiKey by financeViewModel.openRouterApiKey.collectAsState()
+    val openRouterModel by financeViewModel.openRouterModel.collectAsState()
+
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+
     var scannedBitmaps by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
     var isProcessing by remember { mutableStateOf(false) }
+    var processingStatusText by remember { mutableStateOf("Menganalisis data...") }
+    var wasAiUsed by remember { mutableStateOf(false) }
 
     // Multi-Item list extracted from receipt(s)
     val scannedItemList = remember { mutableStateListOf<ScannedItem>() }
@@ -76,7 +85,7 @@ fun ReceiptScanDialog(
     var globalType by remember { mutableStateOf("EXPENSE") } // "EXPENSE" or "INCOME"
     var selectedWallet by remember { mutableStateOf("Tunai") }
 
-    // Mode: 0 = Rekap Per Item (Multi-Transaksi), 1 = Rekap 1 Transaksi (Total)
+    // Mode: true = Rekap Per Item (Multi-Transaksi), false = Rekap 1 Transaksi (Total)
     var isSeparateItemsMode by remember { mutableStateOf(true) }
 
     val incomeCategories = listOf("Gaji", "Bonus", "Investasi", "Penjualan", "Lainnya")
@@ -86,7 +95,7 @@ fun ReceiptScanDialog(
     )
     val walletOptions = listOf("Tunai", "E-Wallet", "Rekening 1", "Rekening 2", "Rekening 3", "Lainnya")
 
-    // Function to parse single or multiple images
+    // Function to parse single or multiple images using AI or OCR fallback
     fun processBitmaps(bitmaps: List<Bitmap>) {
         scannedBitmaps = bitmaps
         isProcessing = true
@@ -96,9 +105,34 @@ fun ReceiptScanDialog(
                 var detectedMerchant = "Struk Belanja"
                 var detectedType = "EXPENSE"
                 var detectedWallet = "Tunai"
+                var usedAiSuccess = false
 
                 for (bitmap in bitmaps) {
-                    val result = ReceiptScannerHelper.scanReceipt(bitmap)
+                    val result: ScannedReceiptData = if (openRouterApiKey.isNotBlank()) {
+                        processingStatusText = "AI OpenRouter ($openRouterModel) sedang menganalisis struk presisi..."
+                        try {
+                            val aiResult = OpenRouterAiHelper.analyzeReceiptWithAi(
+                                bitmap = bitmap,
+                                apiKey = openRouterApiKey,
+                                modelName = openRouterModel
+                            )
+                            usedAiSuccess = true
+                            aiResult
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            Toast.makeText(
+                                context,
+                                "OpenRouter AI gagal (${e.localizedMessage ?: "error"}), beralih ke OCR lokal.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            processingStatusText = "Membaca teks struk dengan OCR lokal..."
+                            ReceiptScannerHelper.scanReceipt(bitmap)
+                        }
+                    } else {
+                        processingStatusText = "Membaca teks struk dengan OCR lokal..."
+                        ReceiptScannerHelper.scanReceipt(bitmap)
+                    }
+
                     if (result.merchantName.isNotBlank() && result.merchantName != "Struk Pembelian") {
                         detectedMerchant = result.merchantName
                     }
@@ -110,6 +144,7 @@ fun ReceiptScanDialog(
                     }
                 }
 
+                wasAiUsed = usedAiSuccess
                 merchantTitle = detectedMerchant
                 globalType = detectedType
                 selectedWallet = detectedWallet
@@ -154,7 +189,7 @@ fun ReceiptScanDialog(
         }
     }
 
-    // Multi-Image Gallery Launcher (Pick Multiple Visual Media)
+    // Multi-Image Gallery Launcher
     val multiGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris: List<Uri> ->
@@ -166,6 +201,21 @@ fun ReceiptScanDialog(
                 Toast.makeText(context, "Gagal memuat gambar dari galeri", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    // Dialog Input API Key OpenRouter
+    if (showApiKeyDialog) {
+        OpenRouterApiKeyModal(
+            currentKey = openRouterApiKey,
+            currentModel = openRouterModel,
+            onDismiss = { showApiKeyDialog = false },
+            onSave = { newKey, newModel ->
+                financeViewModel.setOpenRouterApiKey(newKey)
+                financeViewModel.setOpenRouterModel(newModel)
+                showApiKeyDialog = false
+                Toast.makeText(context, "API Key OpenRouter berhasil disimpan!", Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 
     Dialog(
@@ -200,7 +250,7 @@ fun ReceiptScanDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.DocumentScanner,
+                                imageVector = Icons.Default.AutoAwesome,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp)
@@ -209,31 +259,83 @@ fun ReceiptScanDialog(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Pindai Struk & Bukti Bayar",
+                                text = "Pindai Struk dengan AI",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Presisi per-item & rekap multi-transaksi",
+                                text = "Analisis presisi bertenaga OpenRouter",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Tutup")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // OpenRouter Key Status Button
+                        IconButton(
+                            onClick = { showApiKeyDialog = true },
+                            modifier = Modifier.testTag("btn_configure_openrouter_dialog")
+                        ) {
+                            Icon(
+                                imageVector = if (openRouterApiKey.isNotBlank()) Icons.Default.VpnKey else Icons.Default.KeyOff,
+                                contentDescription = "Konfigurasi OpenRouter",
+                                tint = if (openRouterApiKey.isNotBlank()) SoftGreenSuccess else MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Tutup")
+                        }
+                    }
+                }
+
+                // AI Status Pill Banner
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (openRouterApiKey.isNotBlank()) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                        .clickable { showApiKeyDialog = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (openRouterApiKey.isNotBlank()) Icons.Default.AutoAwesome else Icons.Default.Key,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = if (openRouterApiKey.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (openRouterApiKey.isNotBlank()) "AI OpenRouter: Aktif (${openRouterModel.take(24)})" else "API Key OpenRouter Belum Diatur (Klik untuk atur)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (openRouterApiKey.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = if (openRouterApiKey.isNotBlank()) "Ubah" else "Pasang",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
 
                 HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 10.dp),
+                    modifier = Modifier.padding(vertical = 6.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                 )
 
                 if (scannedBitmaps.isEmpty()) {
-                    // Initial State: Choose Camera vs Gallery (single/multiple)
+                    // Initial State: Choose Camera vs Gallery
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -256,7 +358,7 @@ fun ReceiptScanDialog(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Foto struk belanja (Indomaret, SPBU, Cafe) atau pilih 1 atau lebih screenshot transfer/pembayaran. Sistem akan mengekstrak setiap item & harga secara presisi.",
+                            text = "AI akan membaca harga, tipe transaksi (pemasukan/pengeluaran), kategori, dan rincian catatan setiap item secara presisi dan akurat.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -310,7 +412,7 @@ fun ReceiptScanDialog(
                         }
                     }
                 } else if (isProcessing) {
-                    // Processing / OCR State
+                    // Processing / AI analysis state
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -319,14 +421,19 @@ fun ReceiptScanDialog(
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(44.dp)
+                            )
                             Text(
-                                text = "Membaca teks struk & mengekstrak harga presisi...",
+                                text = processingStatusText,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 24.dp)
                             )
                         }
                     }
@@ -374,14 +481,25 @@ fun ReceiptScanDialog(
                                             }
                                             Spacer(modifier = Modifier.width(10.dp))
                                             Column {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    if (wasAiUsed) {
+                                                        Icon(
+                                                            Icons.Default.AutoAwesome,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(14.dp),
+                                                            tint = SoftGreenSuccess
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                    }
+                                                    Text(
+                                                        text = if (wasAiUsed) "Analisis AI OpenRouter" else "Ekstraksi OCR",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = SoftGreenSuccess
+                                                    )
+                                                }
                                                 Text(
-                                                    text = "${scannedItemList.size} Item Terdeteksi",
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = SoftGreenSuccess
-                                                )
-                                                Text(
-                                                    text = "Presisi sesuai teks struk",
+                                                    text = "${scannedItemList.size} Item Terdeteksi Presisi",
                                                     fontSize = 11.sp,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -413,51 +531,45 @@ fun ReceiptScanDialog(
                             }
                         }
 
-                        // Section 2: Global Configuration (Tipe Transaksi & Akun Dompet)
+                        // Section 2: Global Configuration (Tipe Transaksi)
                         item {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                                    .padding(3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                // Tipe Selector: Pengeluaran vs Pemasukan
-                                Row(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-                                        .padding(3.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                Button(
+                                    onClick = {
+                                        globalType = "EXPENSE"
+                                        scannedItemList.forEach { it.type = "EXPENSE" }
+                                    },
+                                    modifier = Modifier.weight(1f).height(36.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (globalType == "EXPENSE") SoftRedDanger else Color.Transparent,
+                                        contentColor = if (globalType == "EXPENSE") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    ),
+                                    contentPadding = PaddingValues(0.dp)
                                 ) {
-                                    Button(
-                                        onClick = {
-                                            globalType = "EXPENSE"
-                                            scannedItemList.forEach { it.type = "EXPENSE" }
-                                        },
-                                        modifier = Modifier.weight(1f).height(36.dp),
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (globalType == "EXPENSE") SoftRedDanger else Color.Transparent,
-                                            contentColor = if (globalType == "EXPENSE") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        contentPadding = PaddingValues(0.dp)
-                                    ) {
-                                        Text("Pengeluaran", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
+                                    Text("Pengeluaran", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
 
-                                    Button(
-                                        onClick = {
-                                            globalType = "INCOME"
-                                            scannedItemList.forEach { it.type = "INCOME" }
-                                        },
-                                        modifier = Modifier.weight(1f).height(36.dp),
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (globalType == "INCOME") SoftGreenSuccess else Color.Transparent,
-                                            contentColor = if (globalType == "INCOME") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        contentPadding = PaddingValues(0.dp)
-                                    ) {
-                                        Text("Pemasukan", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
+                                Button(
+                                    onClick = {
+                                        globalType = "INCOME"
+                                        scannedItemList.forEach { it.type = "INCOME" }
+                                    },
+                                    modifier = Modifier.weight(1f).height(36.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (globalType == "INCOME") SoftGreenSuccess else Color.Transparent,
+                                        contentColor = if (globalType == "INCOME") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    ),
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Text("Pemasukan", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -679,6 +791,145 @@ fun ReceiptScanDialog(
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Modal to input or update OpenRouter API Key and Model manually
+ */
+@Composable
+fun OpenRouterApiKeyModal(
+    currentKey: String,
+    currentModel: String,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit
+) {
+    var keyInput by remember { mutableStateOf(currentKey) }
+    var modelInput by remember { mutableStateOf(currentModel.ifBlank { "google/gemini-2.0-flash-001" }) }
+    var isKeyVisible by remember { mutableStateOf(false) }
+
+    val presetModels = listOf(
+        "google/gemini-2.0-flash-001",
+        "openai/gpt-4o-mini",
+        "qwen/qwen-2.5-vl-72b-instruct:free",
+        "meta-llama/llama-3.2-11b-vision-instruct:free"
+    )
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.VpnKey,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "API Key OpenRouter",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Tutup")
+                    }
+                }
+
+                Text(
+                    text = "Masukkan API key OpenRouter Anda secara manual. AI akan menganalisis struk belanja dan foto transaksi secara presisi dan akurat.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // API Key TextField
+                OutlinedTextField(
+                    value = keyInput,
+                    onValueChange = { keyInput = it },
+                    label = { Text("OpenRouter API Key (sk-or-...)") },
+                    singleLine = true,
+                    visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { isKeyVisible = !isKeyVisible }) {
+                            Icon(
+                                imageVector = if (isKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (isKeyVisible) "Sembunyikan" else "Tampilkan"
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                )
+
+                // Model Selection
+                Column {
+                    Text(
+                        text = "Pilih / Ketik Model Vision AI:",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = modelInput,
+                        onValueChange = { modelInput = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        presetModels.forEach { m ->
+                            FilterChip(
+                                selected = modelInput == m,
+                                onClick = { modelInput = m },
+                                label = { Text(m.substringAfter("/"), fontSize = 10.sp) },
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Batal")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { onSave(keyInput, modelInput) },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Simpan API Key")
                     }
                 }
             }

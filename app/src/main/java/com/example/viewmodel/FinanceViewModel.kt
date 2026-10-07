@@ -80,6 +80,13 @@ class FinanceViewModel(
     private val _initialOther = MutableStateFlow(prefs.getFloat("initial_other", 0f).toDouble())
     val initialOther: StateFlow<Double> = _initialOther.asStateFlow()
 
+    // OpenRouter AI API configuration for precise receipt analysis
+    private val _openRouterApiKey = MutableStateFlow(prefs.getString("openrouter_api_key", "") ?: "")
+    val openRouterApiKey: StateFlow<String> = _openRouterApiKey.asStateFlow()
+
+    private val _openRouterModel = MutableStateFlow(prefs.getString("openrouter_model", "google/gemini-2.0-flash-001") ?: "google/gemini-2.0-flash-001")
+    val openRouterModel: StateFlow<String> = _openRouterModel.asStateFlow()
+
     // Filter and search on history screen
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -124,6 +131,18 @@ class FinanceViewModel(
 
     fun setSelectedFilter(filter: String) {
         _selectedFilter.value = filter
+    }
+
+    fun setOpenRouterApiKey(key: String) {
+        val trimmed = key.trim()
+        _openRouterApiKey.value = trimmed
+        prefs.edit().putString("openrouter_api_key", trimmed).apply()
+    }
+
+    fun setOpenRouterModel(model: String) {
+        val trimmed = model.trim()
+        _openRouterModel.value = trimmed
+        prefs.edit().putString("openrouter_model", trimmed).apply()
     }
 
     private fun loadTransactionsForUser(userId: Int) {

@@ -25,6 +25,10 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.foundation.horizontalScroll
+import com.example.ui.theme.SoftGreenSuccess
 import com.example.viewmodel.AuthViewModel
 import com.example.viewmodel.FinanceViewModel
 import java.text.SimpleDateFormat
@@ -52,6 +56,12 @@ fun SettingsScreen(
     val initialBri by financeViewModel.initialBri.collectAsState()
     val initialDanamon by financeViewModel.initialDanamon.collectAsState()
     val initialOther by financeViewModel.initialOther.collectAsState()
+
+    val openRouterApiKey by financeViewModel.openRouterApiKey.collectAsState()
+    val openRouterModel by financeViewModel.openRouterModel.collectAsState()
+    var inputApiKey by remember(openRouterApiKey) { mutableStateOf(openRouterApiKey) }
+    var inputModel by remember(openRouterModel) { mutableStateOf(openRouterModel) }
+    var isApiKeyVisible by remember { mutableStateOf(false) }
 
     // Trigger toast alerts from UI message stream
     LaunchedEffect(key1 = true) {
@@ -266,7 +276,143 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // OpenRouter AI Configuration Section
+        SettingSectionHeader(title = "INTEGRASI AI OPENROUTER (PINDAI STRUK)")
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Kecerdasan Buatan (AI Vision)",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (openRouterApiKey.isNotBlank()) "Status: Terhubung & Aktif" else "Status: Belum Dikonfigurasi",
+                                fontSize = 10.sp,
+                                color = if (openRouterApiKey.isNotBlank()) SoftGreenSuccess else MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Gunakan API key OpenRouter pribadi Anda untuk menganalisis foto struk, bukti bayar, dan mutasi secara presisi dan akurat.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = inputApiKey,
+                    onValueChange = { inputApiKey = it },
+                    label = { Text("OpenRouter API Key (sk-or-v1-...)") },
+                    singleLine = true,
+                    visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
+                            Icon(
+                                imageVector = if (isApiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (isApiKeyVisible) "Sembunyikan" else "Tampilkan"
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = inputModel,
+                    onValueChange = { inputModel = it },
+                    label = { Text("Model Vision AI OpenRouter") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Quick model selector chips
+                val quickModels = listOf(
+                    "google/gemini-2.0-flash-001",
+                    "openai/gpt-4o-mini",
+                    "qwen/qwen-2.5-vl-72b-instruct:free"
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    quickModels.forEach { m ->
+                        FilterChip(
+                            selected = inputModel == m,
+                            onClick = { inputModel = m },
+                            label = { Text(m.substringAfter("/"), fontSize = 10.sp) },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = {
+                        financeViewModel.setOpenRouterApiKey(inputApiKey)
+                        financeViewModel.setOpenRouterModel(inputModel)
+                        Toast.makeText(context, "Pengaturan AI OpenRouter berhasil disimpan!", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .testTag("btn_save_openrouter_settings"),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Simpan Konfigurasi AI", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         // Logout action
         Button(
