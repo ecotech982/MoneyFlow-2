@@ -42,7 +42,6 @@ import com.example.viewmodel.AuthViewModel
 import com.example.viewmodel.FinanceViewModel
 import androidx.compose.ui.res.painterResource
 import com.example.R
-import com.example.ui.components.ReceiptScanDialog
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -54,7 +53,6 @@ fun DashboardScreen(
 ) {
     val currentUser by authViewModel.currentUser.collectAsState()
     val transactions by financeViewModel.transactions.collectAsState()
-    var showScanReceiptDialog by remember { mutableStateOf(false) }
 
     val initialCash by financeViewModel.initialCash.collectAsState()
     val initialEWallet by financeViewModel.initialEWallet.collectAsState()
@@ -321,84 +319,6 @@ fun DashboardScreen(
                                 )
                             }
                         }
-                    }
-                }
-            }
-        }
-
-        // Quick Action: Pindai Struk / Bukti Bayar Otomatis (Kamera & Galeri)
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .testTag("scan_receipt_banner"),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DocumentScanner,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "Pindai Struk & Bukti Bayar",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Kamera & Galeri otomatis masuk ke Riwayat",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Button(
-                        onClick = { showScanReceiptDialog = true },
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.testTag("btn_open_scan_dialog")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CameraAlt,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Pindai",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
                     }
                 }
             }
@@ -687,12 +607,6 @@ fun DashboardScreen(
             }
         }
     }
-
-    ReceiptScanDialog(
-        isOpen = showScanReceiptDialog,
-        onDismiss = { showScanReceiptDialog = false },
-        financeViewModel = financeViewModel
-    )
 }
 
 @Composable

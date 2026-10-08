@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.navigation.NavController
 import com.example.data.model.Transaction
-import com.example.ui.components.ReceiptScanDialog
 import com.example.ui.theme.SoftGreenSuccess
 import com.example.ui.theme.SoftRedDanger
 import com.example.utils.ExportUtils
@@ -48,7 +47,6 @@ fun HistoryScreen(
     var selectedHistoryTab by remember { mutableStateOf(0) } // 0 = Semua, 1 = Pemasukan, 2 = Pengeluaran
     var showConfirmDeleteAll by remember { mutableStateOf(false) }
     var showExportMenu by remember { mutableStateOf(false) }
-    var showScanDialog by remember { mutableStateOf(false) }
 
     // Interactive Filter logic
     val filteredTransactions = remember(transactions, searchQuery, selectedFilter, selectedHistoryTab) {
@@ -204,18 +202,6 @@ fun HistoryScreen(
                             }
                         )
                     }
-                }
-
-                // Camera / Scan Receipt Button
-                IconButton(
-                    onClick = { showScanDialog = true },
-                    modifier = Modifier.testTag("scan_receipt_history_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CameraAlt,
-                        contentDescription = "Pindai Struk / Bukti Bayar",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
                 }
 
                 // Delete All Button
@@ -439,12 +425,6 @@ fun HistoryScreen(
             }
         }
     }
-
-    ReceiptScanDialog(
-        isOpen = showScanDialog,
-        onDismiss = { showScanDialog = false },
-        financeViewModel = financeViewModel
-    )
 }
 
 private fun shareExportedFile(context: Context, file: File, mimeType: String) {

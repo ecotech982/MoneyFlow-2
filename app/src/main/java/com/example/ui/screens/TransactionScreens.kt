@@ -34,7 +34,6 @@ import com.example.data.model.Transaction
 import com.example.ui.theme.SoftGreenSuccess
 import com.example.ui.theme.SoftRedDanger
 import com.example.utils.FormatUtils
-import com.example.ui.components.ReceiptScanDialog
 import com.example.viewmodel.FinanceViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -51,7 +50,6 @@ fun AddTransactionScreen(navController: NavController, financeViewModel: Finance
     var selectedDate by remember { mutableStateOf(System.currentTimeMillis()) }
     var selectedWallet by remember { mutableStateOf("Tunai") }
     var customBankName by remember { mutableStateOf("") }
-    var showScanDialog by remember { mutableStateOf(false) }
 
     val categories = listOf(
         "Tempat Tinggal", "Tagihan Rutin", "Pulsa/Data", "Langganan", 
@@ -84,20 +82,6 @@ fun AddTransactionScreen(navController: NavController, financeViewModel: Finance
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Pindai Struk / Bukti Bayar Button
-            OutlinedButton(
-                onClick = { showScanDialog = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("scan_receipt_in_add_screen"),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Pindai Bukti / Struk Bayar (Kamera & Galeri)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-
             // Nominal Amount Input field
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -504,15 +488,6 @@ fun AddTransactionScreen(navController: NavController, financeViewModel: Finance
             }
         }
     }
-
-    ReceiptScanDialog(
-        isOpen = showScanDialog,
-        onDismiss = { showScanDialog = false },
-        financeViewModel = financeViewModel,
-        onTransactionSaved = {
-            navController.popBackStack()
-        }
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
